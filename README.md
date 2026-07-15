@@ -112,3 +112,7 @@ MIT License
 ---
 
 Built because I wanted to understand how chess engines actually think.
+
+## How to play with Ruthless?
+
+You can play with Ruthless by sending him a challenge directly on lichess --> https://lichess.org/@/RuthlessBot
