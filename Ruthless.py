@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#####Creator: Dr.flatpawn
 import sys
 import time
 import chess
