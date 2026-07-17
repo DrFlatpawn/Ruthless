@@ -11,6 +11,17 @@ BISHOP_PHASE = 1
 ROOK_PHASE   = 2
 QUEEN_PHASE  = 4
 MAX_PHASE    = 24 
+PASSED_PAWN_MG = [0, 5, 12, 25, 45, 70, 110, 0]
+PASSED_PAWN_EG = [0, 10, 25, 45, 70, 120, 180, 0]
+KNIGHT_MOBILITY = 4
+BISHOP_MOBILITY = 5
+ROOK_MOBILITY = 2
+QUEEN_MOBILITY = 1
+ROOK_OPEN_FILE_MG = 22
+ROOK_OPEN_FILE_EG = 18
+ROOK_SEMIOPEN_FILE_MG = 12
+ROOK_SEMIOPEN_FILE_EG = 10
+MAX_HISTORY = 16384
 
 MG_VALUES = {
     chess.PAWN: 82,
@@ -158,6 +169,79 @@ PST_EG = {
 
 FLIP_SQUARE = [s ^ 56 for s in range(64)]
 
+def is_passed_pawn(board, square, color):
+
+    file = chess.square_file(square)
+    rank = chess.square_rank(square)
+
+    enemy = chess.BLACK if color == chess.WHITE else chess.WHITE
+
+    files = [file]
+
+    if file > 0:
+        files.append(file - 1)
+
+    if file < 7:
+        files.append(file + 1)
+
+    enemy_pawns = board.pieces(chess.PAWN, enemy)
+
+    for ep in enemy_pawns:
+
+        ef = chess.square_file(ep)
+        er = chess.square_rank(ep)
+
+        if ef not in files:
+            continue
+
+        if color == chess.WHITE:
+            if er > rank:
+                return False
+        else:
+            if er < rank:
+                return False
+
+    return True
+
+def mobility(board, square):
+
+    piece = board.piece_at(square)
+
+    if piece is None:
+        return 0
+
+    count = 0
+
+    for move in board.generate_pseudo_legal_moves():
+
+        if move.from_square == square:
+            count += 1
+
+    return count
+
+def rook_file_bonus(board, square, color):
+
+    file = chess.square_file(square)
+
+    own = board.pieces(chess.PAWN, color)
+    enemy = board.pieces(chess.PAWN, not color)
+
+    own_on_file = own & chess.BB_FILES[file]
+    enemy_on_file = enemy & chess.BB_FILES[file]
+
+    if not own_on_file and not enemy_on_file:
+        return (
+            ROOK_OPEN_FILE_MG,
+            ROOK_OPEN_FILE_EG,
+        )
+
+    if not own_on_file:
+        return (
+            ROOK_SEMIOPEN_FILE_MG,
+            ROOK_SEMIOPEN_FILE_EG,
+        )
+
+    return (0, 0)
 
 def evaluate_board(board: chess.Board) -> int:
 
@@ -186,9 +270,34 @@ def evaluate_board(board: chess.Board) -> int:
         if p_color == chess.WHITE:
             mg_white += MG_VALUES[p_type] + PST_MG[p_type][sq]
             eg_white += EG_VALUES[p_type] + PST_EG[p_type][sq]
+        if p_type == chess.ROOK:
+            mg, eg = rook_file_bonus(board, sq, chess.WHITE)
+            mg_white += mg
+            eg_white += eg
+        if p_type == chess.KNIGHT:
+                m = mobility(board, sq)
+                mg_white += m * KNIGHT_MOBILITY
+                eg_white += m * (KNIGHT_MOBILITY // 2)
+
+        elif p_type == chess.BISHOP:
+                m = mobility(board, sq)
+                mg_white += m * BISHOP_MOBILITY
+                eg_white += m * (BISHOP_MOBILITY // 2)
+
+        elif p_type == chess.ROOK:
+                m = mobility(board, sq)
+                mg_white += m * ROOK_MOBILITY
+                eg_white += m
+
+        elif p_type == chess.QUEEN:
+                m = mobility(board, sq)
+                mg_white += m
             
-            
-            if p_type == chess.PAWN:
+        if p_type == chess.PAWN:
+                if is_passed_pawn(board, sq, chess.WHITE):
+                    rank = chess.square_rank(sq)
+                    mg_white += PASSED_PAWN_MG[rank]
+                    eg_white += PASSED_PAWN_EG[rank]
                 file = chess.square_file(sq)
                 
                 if len(white_pawns & chess.BB_FILES[file]) > 1:
@@ -207,8 +316,34 @@ def evaluate_board(board: chess.Board) -> int:
             mg_black += MG_VALUES[p_type] + PST_MG[p_type][flipped_sq]
             eg_black += EG_VALUES[p_type] + PST_EG[p_type][flipped_sq]
 
-            
+            if p_type == chess.ROOK:
+                mg, eg = rook_file_bonus(board, sq, chess.BLACK)
+                mg_black += mg
+                eg_black += eg
+
+            if p_type == chess.KNIGHT:
+                m = mobility(board, sq)
+                mg_black += m * KNIGHT_MOBILITY
+                eg_black += m * (KNIGHT_MOBILITY // 2)
+
+            elif p_type == chess.BISHOP:
+                m = mobility(board, sq)
+                mg_black += m * BISHOP_MOBILITY
+                eg_black += m * (BISHOP_MOBILITY // 2)
+
+            elif p_type == chess.ROOK:
+                m = mobility(board, sq)
+                mg_black += m * ROOK_MOBILITY
+                eg_black += m
+
+            elif p_type == chess.QUEEN:
+                m = mobility(board, sq)
+                mg_black += m
             if p_type == chess.PAWN:
+                if is_passed_pawn(board, sq, chess.BLACK):
+                    rank = 7 - chess.square_rank(sq)
+                    mg_black += PASSED_PAWN_MG[rank]
+                    eg_black += PASSED_PAWN_EG[rank]
                 file = chess.square_file(sq)
                 if len(black_pawns & chess.BB_FILES[file]) > 1:
                     mg_black -= 15
@@ -241,6 +376,7 @@ def evaluate_board(board: chess.Board) -> int:
 INFINITE_VAL = 1000000
 MATE_THRESHOLD = 90000
 MATE_SCORE_VAL = 99999
+DELTA_MARGIN = 200
 
 class TranspositionTable:
     
@@ -262,12 +398,18 @@ class TranspositionTable:
         elif score < -MATE_THRESHOLD:
             score -= ply
 
+        old_entry = self.table.get(key)
+
+# Keep deeper searches whenever possible
+        if old_entry is not None and old_entry["depth"] > depth:
+            return
+
         self.table[key] = {
-            'depth': depth,
-            'score': score,
-            'flag': flag,
-            'move': move
-        }
+            "depth": depth,
+            "score": score,
+            "flag": flag,
+            "move": move,
+            }
 
     def retrieve_score(self, entry, ply):
         
@@ -313,7 +455,7 @@ class RuthlessEngine:
                 target_val = MG_VALUES[chess.PAWN]
             else:
                 target_val = MG_VALUES[target.piece_type] if target else 100
-            attacker_val = MG_VALUES[attacker.piece_type] if attacker else 100
+                attacker_val = MG_VALUES[attacker.piece_type] if attacker else 100
             return 900000 + (target_val * 10 - attacker_val)
 
         
@@ -388,6 +530,12 @@ class RuthlessEngine:
 
         if depth <= 0:
             return self.quiescence_search(alpha, beta)
+        alpha = max(alpha, -MATE_SCORE_VAL + ply)
+
+        beta = min(beta, MATE_SCORE_VAL - ply - 1)
+
+        if alpha >= beta:
+            return alpha
 
         
         zobrist_key = chess.polyglot.zobrist_hash(self.board)
@@ -462,8 +610,33 @@ class RuthlessEngine:
                     score = -self.negamax(depth - 1, -alpha - 1, -alpha, ply + 1)
                     if score > alpha:
                         score = -self.negamax(depth - 1, -beta, -alpha, ply + 1)
+            if moves_searched == 1:
+
+    # First move gets a normal search.
+                score = -self.negamax(
+                depth - 1,
+                -beta,
+                -alpha,
+                ply + 1
+            )
+
             else:
-                score = -self.negamax(depth - 1, -beta, -alpha, ply + 1)
+                score = -self.negamax(
+                    depth - 1,
+                    -alpha - 1,
+                    -alpha,
+                    ply + 1
+                )
+
+
+                if score > alpha and score < beta:
+
+                    score = -self.negamax(
+                        depth - 1,
+                        -beta,
+                        -alpha,
+                         ply + 1
+                    )
 
             self.board.pop()
 
