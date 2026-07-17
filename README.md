@@ -41,7 +41,7 @@ Current goals include:
 Clone the repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/Ruthless.git
+git clone https://github.com/DrFlatpawn/Ruthless.git
 cd Ruthless
 ```
 
