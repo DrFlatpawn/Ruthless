@@ -8,21 +8,23 @@ This project started as a personal challenge to understand search algorithms, ev
 - UCI compatible
 - Alpha beta negamax search
 - Iterative deepening
-- Quiescence search (with check evasions + delta pruning)
+- Quiescence search (with check evasions + delta pruning + static exchange evaluation, see below, we don't talk about v2.2's first draft)
 - Transposition table (Zobrist hashing)
 - Killer move heuristic
 - History heuristic
 - Late move reductions (LMR)
+- Late move pruning (LMP)
 - Principal variation search (PVS)
 - Null move pruning
 - Reverse futility / futility pruning
 - Check extensions
-- Aspiration windows
-- PeSTO piece square tables
+- Aspiration windows (now with progressive widening because rage-quitting straight to full width every fail was embarrassing)
+- Static exchange evaluation (SEE) for quiescence move ordering/pruning
+- PeSTO piece square tables (the endgame king table is no longer secretly the knight table, more on that below)
 - Tapered evaluation (middlegame / endgame)
 - Pawn structure evaluation (doubled, isolated, passed pawns)
-- Mobility evaluation
-- King safety evaluation
+- "Safe" mobility evaluation (doesn't get excited about a knight hanging out on a square defended by a pawn anymore)
+- King safety evaluation (open files + pawn shield)
 - Time management for blitz, rapid, and bullet
 
 ## Current strength
